@@ -6,10 +6,16 @@ from datetime import datetime
 
 import streamlit as st
 
+# Devices we ping over TCP, with a troubleshooting tip for each
 DEVICES = (
-    ("PTZ camera", "Check camera power or PoE, the switch link, and the camera IP and service port."),
-    ("Streaming PC", "Wake the PC, check its Ethernet connection, and confirm the selected service is listening and allowed by the firewall."),
+    ("PTZ camera",
+     "Check camera power or PoE, the switch link, and the camera IP and service port."),
+    ("Streaming PC",
+     "Wake the PC, check its Ethernet connection, and confirm the selected service is "
+     "listening and allowed by the firewall."),
 )
+
+# Things a volunteer has to check by eye and ear: (name, what to do, troubleshooting)
 CHECKLIST = (
     ("Behringer X32 audio", "Listen on the stream bus and confirm clean audio from a mic and playback.",
      "Check input gain, channel mute, bus sends and the output patch. Verify the returned signal on the streaming PC."),
@@ -21,6 +27,7 @@ CHECKLIST = (
 
 
 def check_device(endpoint):
+    """Try a TCP connection to (host, port) and return (status, detail)."""
     host, port = endpoint
     if not host:
         return "Not configured", "Enter a hostname or IP address."
@@ -37,6 +44,7 @@ def make_report(generated, verdict, volunteer, service, observed, automatic, man
     writer.writerow(("Report generated", "Readiness", "Volunteer", "Service", "Checked at",
                      "Type", "Check", "Target", "Result", "Detail", "Notes"))
 
+    # Stops Excel from running a cell that starts with = + - or @ as a formula
     def safe(value):
         return "'" + value if value.lstrip().startswith(("=", "+", "-", "@")) or value.startswith(("\t", "\r", "\n")) else value
 
@@ -69,9 +77,11 @@ def main():
     st.caption("TCP checks run from the computer hosting this dashboard and measure reachability to the selected service port.")
     if st.button("Run network checks", type="primary", disabled=not any(host for host, _ in endpoints)):
         with st.spinner("Checking device endpoints…"):
+            # run both checks at once so one slow device doesn't hold up the other
             with ThreadPoolExecutor(max_workers=len(DEVICES)) as pool:
                 results = list(pool.map(check_device, endpoints))
         st.session_state.network = (endpoints, results, datetime.now().astimezone().isoformat(timespec="seconds"))
+    # results are only valid if the addresses haven't been edited since the last run
     saved_endpoints, results, observed = st.session_state.get("network", ([], [], ""))
     automatic = []
     all_current = saved_endpoints == endpoints
@@ -115,6 +125,7 @@ def main():
 
     st.header("Readiness report")
     notes = st.text_area("Notes and follow-up actions", max_chars=2000)
+    # any failure wins, otherwise every check has to pass to be Ready
     statuses = [row[2] for row in automatic + manual]
     if "Fail" in statuses:
         verdict = "Needs attention"
